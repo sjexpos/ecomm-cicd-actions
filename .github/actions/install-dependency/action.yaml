@@ -1,0 +1,37 @@
+name: "Install dependency"
+description: "Download a maven dependency from artifacts github repository"
+secrets:
+  GITHUB_TOKEN:
+    required: true
+inputs:
+  github_repo:
+    description: repo
+    type: string
+    required: true
+  group_id:
+    description: maven group id of the package to install
+    type: string
+    required: true
+  artifact_id:
+    description: maven artifact id of the package to install
+    type: string
+    required: true
+  version:
+    description: maven version of the package to install
+    type: string
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download artifact
+      id: download_artifact
+      shell: bash
+      run: |
+        export ARTIFACT_ID=`curl -L -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/sjexpos/${{ inputs.github_repo }}/actions/artifacts | jq '.artifacts[] | "\(.id) \(.name)"' | tr -d '"' | grep ${{ inputs.artifact_id }} | head -n 1 | awk '{print $1}'`
+        echo -e "artifact=$ARTIFACT_ID"
+        curl -L -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" https://api.github.com/repos/sjexpos/${{ inputs.github_repo }}/actions/artifacts/$ARTIFACT_ID/zip > artifact.zip
+        unzip artifact.zip
+        mvn install:install-file -Dfile=${{ inputs.artifact_id }}-${{ inputs.version }}.jar -DgroupId=${{ inputs.group_id }} -DartifactId=${{ inputs.artifact_id }} -Dversion=${{ inputs.version }} -Dpackaging=jar -DgeneratePom=true
+        rm ${{ inputs.artifact_id }}-${{ inputs.version }}.jar
+        rm artifact.zip
