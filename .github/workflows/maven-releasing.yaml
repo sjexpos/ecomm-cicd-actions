@@ -1,0 +1,72 @@
+name: Tag and docker publish
+
+on:
+  workflow_call:
+    inputs:
+      group_id: 
+        description: maven group id of the released package
+        type: string
+        required: true
+      artifact_id: 
+        description: maven artifact id of the released package
+        type: string
+        required: true
+
+jobs:
+
+  close-version:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+          server-id: github
+      - name: Configure Git user
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+      - name: conventional Changelog Action
+        id: changelog
+        uses: TriPSs/conventional-changelog-action@v5
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          skip-on-empty: 'true'
+          skip-commit: 'true'
+          skip-tag: 'true'
+      - name: Maven release
+        id: close_version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          closed_version_value=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout | sed 's/-SNAPSHOT//g' | sed 's/-snapshot//g')
+          echo "closed_version=$closed_version_value"
+          echo "closed_version=$closed_version_value" >> $GITHUB_ENV
+          mvn --batch-mode --update-snapshots install
+          mvn --batch-mode build-helper:parse-version release:clean release:prepare release:perform -Darguments="-Dmaven.test.skipTests=true -Dmaven.test.skip=true -Dmaven.javadoc.skip=true -Dmaven.site.skip=true -Dmaven.site.deploy.skip=true"
+          mvn --batch-mode release:clean
+      - name: Getting last tag
+        run: |
+          last_tag_value=$(git describe --tags $(git rev-list --tags --max-count=1))
+          echo "last_tag=$last_tag_value" >> $GITHUB_ENV
+          pre_path=$(echo "${{ inputs.group_id }}" | sed 's/\./\//g')
+          artifact_name_value=$(echo -e "$pre_path/${{ inputs.artifact_id }}/${{ env.closed_version }}/${{ inputs.artifact_id }}-${{ env.closed_version }}.jar")
+          echo "artifact_name=$artifact_name_value" >> $GITHUB_ENV
+      - name: Print envs
+        run: |
+          echo "${{ env.closed_version }}"
+          echo "${{ env.last_tag }}"
+          echo "${{ env.artifact_name }}"
+      - name: Create a GitHub release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ env.last_tag }}
+          name: Release ${{ env.last_tag }}
+          body: ${{ steps.changelog.outputs.clean_changelog }}
+          artifacts: /home/runner/.m2/repository/${{ env.artifact_name }}
+
