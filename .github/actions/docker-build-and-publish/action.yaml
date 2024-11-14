@@ -53,6 +53,11 @@ runs:
       uses: docker/metadata-action@v5.5.1
       with:
         images: ${{ inputs.image_name }}
+    - name: Resolving tag name
+      shell: bash
+      run: |
+        if [ "${{ github.ref_name }}" = "main" ]; then TAG_NAME="latest"; else TAG_NAME="${{ github.ref_name }}"; fi
+        echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
     - name: Build and push
       uses: docker/build-push-action@v6
       with:
@@ -61,6 +66,6 @@ runs:
         platforms: ${{ inputs.platforms }}
         push: ${{ github.event_name != 'pull_request' }}
         tags: |
-          ${{ inputs.image_name }}:latest
+          ${{ inputs.image_name }}:${{ env.TAG_NAME }}
           ${{ inputs.image_name }}:${{ github.sha }}
         labels: ${{ steps.meta.outputs.labels }}
