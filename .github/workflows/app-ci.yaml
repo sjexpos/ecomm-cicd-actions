@@ -1,0 +1,313 @@
+name: CI
+on:
+  workflow_call:
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
+    inputs:
+      sonar_project_key:
+        description: "Project key which will be used on SonarQube"
+        type: string
+        required: true
+      sonar_project_name:
+        description: "Project name which will be used on SonarQube"
+        type: string
+        required: true
+      docker_images:
+        description: "List of triple of docker image name, context and Dockerfile, in JSON list format. E.g. ['my-image-1;context-1;path-to-dockerfile-1','my-image-2;context-2;path-to-dockerfile-2']"
+        type: string
+        required: false
+        default: "['_']"
+      files_as_artifacts:
+        description: "List of file to upload as artifacts, in JSON list format. E.g. ['file1.txt','file2.txt']"
+        type: string
+        required: false
+        default: "['_']"
+
+jobs:
+
+  build-app:
+    name: Build Application
+    runs-on: ubuntu-24.04
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4.2.2
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+          cache-dependency-path: pom.xml
+      - name: Extract maven groupId
+        run: |
+          groupId_value=$(mvn help:evaluate -Dexpression=project.groupId -q -DforceStdout)
+          echo "groupId=$groupId_value"
+          echo "groupId=$groupId_value" >> $GITHUB_ENV
+      - name: Extract maven artifactId
+        run: |
+          artifactId_value=$(mvn help:evaluate -Dexpression=project.artifactId -q -DforceStdout)
+          echo "artifactId=$artifactId_value"
+          echo "artifactId=$artifactId_value" >> $GITHUB_ENV
+      - name: Extract maven version
+        run: |
+          version_value=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "version=$version_value"
+          echo "version=$version_value" >> $GITHUB_ENV
+      - name: Get & Install dependencies
+        # Maven 3.9.x or latter is needed because the previous version throws error when dependency:tree plugin is run and any jar can not be downloaded.
+        run: |
+          wget https://archive.apache.org/dist/maven/maven-3/3.9.3/binaries/apache-maven-3.9.3-bin.zip
+          unzip apache-maven-3.9.3-bin.zip
+          export M2_HOME=$PWD/apache-maven-3.9.3
+          export PATH=$M2_HOME/bin:$PATH
+          mvn -version
+          modules=$(mvn help:evaluate -Dexpression=project.modules | grep -v "^\[" | grep -v "<\/*strings>" | sed 's/<\/*string>//g' | sed 's/[[:space:]]//')
+          dependencies=$(mvn dependency:tree -Dincludes=${{ env.groupId }} | grep '${{ env.groupId }}' | grep ':compile' | awk -F "- " '{print $2}' | awk -F ":compile" '{print $1}' | sed '/^$/d' | grep -v '${{ env.artifactId }}' | awk '!seen[$0]++')
+          echo "dependencies=$dependencies"
+          echo "modules=$modules"
+          if [ -n "$dependencies" ]; then
+            echo "Downloading dependencies"
+            for dep in $dependencies; do 
+              dep_group_id=${{ env.groupId }}
+              dep_artifact_id=$(echo $dep | awk -F ":" '{print $2}')
+              dep_version=$(echo $dep | awk -F ":" '{print $4}')
+              repo_name=$(echo $dep | awk -F ":" '{print $2}' | awk -F "-" '{print "ecomm-"$1"-"$2}')
+              dep_artifact_name=$dep_artifact_id-$dep_version
+              if [[ "$modules" == *"$dep_artifact_id"* ]]; then
+                echo "Skipping download of artifact $dep_artifact_id because it is a project's submodule"
+              else
+                echo "repo_name = $repo_name"
+                echo "Getting $dep_artifact_name, url = https://api.github.com/repos/${{ github.actor }}/$repo_name/actions/artifacts"
+                ARTIFACT_ID=$(curl -L -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" https://api.github.com/repos/${{ github.actor }}/$repo_name/actions/artifacts | jq '.artifacts[] | "\(.id) \(.name)"' | tr -d '"' | grep $dep_artifact_name | head -n 1 | awk '{print $1}')
+                echo -e "artifact=$ARTIFACT_ID"
+                curl -L -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" https://api.github.com/repos/${{ github.actor }}/$repo_name/actions/artifacts/$ARTIFACT_ID/zip > artifact.zip
+                unzip artifact.zip
+                mvn install:install-file -Dfile=$dep_artifact_name.jar -DgroupId=$dep_group_id -DartifactId=$dep_artifact_id -Dversion=$dep_version -Dpackaging=jar -DgeneratePom=true
+                rm $dep_artifact_name.jar
+                rm artifact.zip
+              fi
+            done
+          fi
+      - name: Building code
+        run: mvn -DskipTests --batch-mode --update-snapshots install
+      - name: Upload compilted sources
+        id: upload-compiled-sources
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: compiled-sources-${{ env.BRANCH_NAME }}
+          path: ./
+    outputs:
+      project-version: ${{ env.version }}
+      compiled-sources-artifact-id: ${{ steps.upload-compiled-sources.outputs.artifact-id }}
+
+  run-tests:
+    name: Run Tests
+    needs: [build-app]
+    runs-on: ubuntu-22.04
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - name: Download compiled sources
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: compiled-sources-${{ env.BRANCH_NAME }}
+          path: ./
+      - uses: actions/setup-java@v4.2.2
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+          cache-dependency-path: pom.xml
+      - name: Testing code
+        run: mvn verify
+      - name: Upload tested sources
+        id: upload-tested-sources
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: tested-sources-${{ env.BRANCH_NAME }}
+          path: ./
+    outputs:
+      tested-sources-artifact-id: ${{ steps.upload-tested-sources.outputs.artifact-id }}
+
+  run-sonarqube:
+    name: Run SonarQube
+    needs: [run-tests]
+    runs-on: ubuntu-22.04
+    services:
+      sonarqube:
+        image: sonarqube
+        ports:
+          - 9000:9000
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        options: --health-cmd "curl -v http://sonarqube:9000/api/system/status" --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+      # use localhost for the host here because we are running the job on the VM. If we were running the job on in a container this would be sonarqube (container mode is when the job define property "container")
+      SONARQUBE_HOST: localhost
+      SONARQUBE_PORT: 9000
+      SONARQUBE_USER: admin
+      SONARQUBE_PASSWORD: Admin123456!
+    steps:
+      - name: Download tested sources
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: tested-sources-${{ env.BRANCH_NAME }}
+          path: ./
+      - uses: actions/setup-java@v4.2.2
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+          cache-dependency-path: pom.xml
+      - name: Create sonar token
+        run: |
+          echo "Waiting SonarQube is started"
+          echo "http://$SONARQUBE_HOST:$SONARQUBE_PORT/api/system/status"
+          while true; do 
+            status=$(curl -s "http://localhost:9000/api/system/status" | jq -r '.status') 
+            if [ "$status" == "UP" ]; then 
+              echo "El servicio está UP." 
+              break 
+            fi 
+            echo "Esperando..." 
+            sleep 5 
+          done
+          echo "Change default password"
+          curl -v -u $SONARQUBE_USER:admin -X POST "http://$SONARQUBE_HOST:$SONARQUBE_PORT/api/users/change_password?login=$SONARQUBE_USER&previousPassword=admin&password=$SONARQUBE_PASSWORD"
+          echo "Create token"
+          sonar_token=$(curl -u $SONARQUBE_USER:$SONARQUBE_PASSWORD http://$SONARQUBE_HOST:$SONARQUBE_PORT/api/user_tokens/generate -d 'name=token' | jq -r '.token')
+          echo "sonar_token=$sonar_token"
+          echo "SONARQUBE_TOKEN=$sonar_token" >> $GITHUB_ENV
+      - name: Static Code Analysis
+        run: |
+          mvn sonar:sonar -Dsonar.login=${{ env.SONARQUBE_TOKEN }} -Dsonar.host.url=http://$SONARQUBE_HOST:$SONARQUBE_PORT -Dsonar.projectKey='${{ inputs.sonar_project_key }}' -Dsonar.projectName='${{ inputs.sonar_project_name }}'
+      - name: Generate Static Code Analysis report
+        run: |
+          curl -u $SONARQUBE_USER:$SONARQUBE_PASSWORD "http://$SONARQUBE_HOST:$SONARQUBE_PORT/api/measures/component?additionalFields=period%2Cmetrics&component=${{ inputs.sonar_project_key }}&metricKeys=alert_status%2Cquality_gate_details%2Cnew_violations%2Caccepted_issues%2Cnew_accepted_issues%2Chigh_impact_accepted_issues%2Csoftware_quality_maintainability_issues%2Csoftware_quality_reliability_issues%2Csoftware_quality_security_issues%2Cbugs%2Cnew_bugs%2Creliability_rating%2Csoftware_quality_reliability_rating%2Cnew_reliability_rating%2Cnew_software_quality_reliability_rating%2Cvulnerabilities%2Cnew_vulnerabilities%2Csecurity_rating%2Csoftware_quality_security_rating%2Cnew_security_rating%2Cnew_software_quality_security_rating%2Csecurity_hotspots%2Cnew_security_hotspots%2Csecurity_hotspots_reviewed%2Cnew_security_hotspots_reviewed%2Csecurity_review_rating%2Cnew_security_review_rating%2Ccode_smells%2Cnew_code_smells%2Csqale_rating%2Csoftware_quality_maintainability_rating%2Cnew_maintainability_rating%2Cnew_software_quality_maintainability_rating%2Csqale_index%2Cnew_technical_debt%2Ccoverage%2Cnew_coverage%2Clines_to_cover%2Cnew_lines_to_cover%2Ctests%2Cduplicated_lines_density%2Cnew_duplicated_lines_density%2Cduplicated_blocks%2Cncloc%2Cncloc_language_distribution%2Cprojects%2Clines%2Cnew_lines%2Cviolations" > ./sonar_report.txt
+      - name: Publish Static Code Analysis report
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: static-code-analysis-report$-${{ env.BRANCH_NAME }}
+          path: ./sonar_report.txt
+          
+  publish-coverage:
+    name: Publish coverage to Codecov
+    needs: [run-sonarqube]
+    runs-on: ubuntu-22.04
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - name: Download tested sources
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: tested-sources-${{ env.BRANCH_NAME }}
+          path: ./
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4.0.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  build-docker-image:
+    name: Create docker image & publish
+    needs: [run-sonarqube]
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        file: ${{ fromJSON(inputs.docker_images) }}
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - name: Download compiled sources
+        if: ${{ matrix.file != '_' }}
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: compiled-sources-${{ env.BRANCH_NAME }}
+          path: ./
+      - name: Split image name, context, dockerfile
+        if: ${{ matrix.file != '_' }}
+        run: |
+          triple="${{ matrix.file }}"
+          image_name=$(echo $triple | awk -F ";" '{print $1}')
+          context=$(echo $triple | awk -F ";" '{if (NF >= 2) print $2; else print "./"}')
+          dockerfile=$(echo $triple | awk -F ";" '{if (NF >= 3) print $3; else print "./Dockerfile"}')
+          echo "image_name=$image_name"
+          echo "context=$context"
+          echo "dockerfile=$dockerfile"
+          echo "image_name=$image_name" >> $GITHUB_ENV
+          echo "context=$context" >> $GITHUB_ENV
+          echo "dockerfile=$dockerfile" >> $GITHUB_ENV
+      - name: Docker build and publish
+        if: ${{ matrix.file != '_' }}
+        uses: sjexpos/ecomm-cicd-actions/.github/actions/docker-build-and-publish@main
+        with:
+          registry_user: ${{ secrets.DOCKERHUB_USERNAME }}
+          registry_token: ${{ secrets.DOCKERHUB_TOKEN }}
+          image_name: ${{ env.image_name }}
+          context: ${{ env.context }}
+          dockerfile: ${{ env.dockerfile }}
+
+  publish-artifacts:
+    name: Publish artifacts
+    needs: [build-app, run-sonarqube]
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        file: ${{ fromJSON(inputs.files_as_artifacts) }}
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+      VERSION: ${{ needs.build-app.outputs.project-version }}
+      FILES: ${{ inputs.files_as_artifacts }}
+    steps:
+      - name: Download tested sources
+        if: ${{ matrix.file != '_' }}
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: tested-sources-${{ env.BRANCH_NAME }}
+          path: ./
+      - name: Resolving ${{ matrix.file }}
+        if: ${{ matrix.file != '_' }}
+        run: |
+          filename=${{ matrix.file }}-${{ env.VERSION }}.jar
+          artifact_name=$(basename "${{ matrix.file }}" .${file##*.})-${{ env.VERSION }}
+          echo "filename=$filename" >> $GITHUB_ENV
+          echo "artifact_name=$artifact_name" >> $GITHUB_ENV
+      - name: Upload ${{ env.artifact_name }}
+        if: ${{ matrix.file != '_' }}
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: ${{ env.artifact_name }}
+          path: ${{ env.filename }}
+
+  delete-unused-artifact:
+    name: Delete unused artifact
+    needs: [build-app, run-tests, publish-artifacts, publish-coverage, build-docker-image]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Delete compiled sources
+        id: delete-compiled-sources
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.actions.deleteArtifact({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              artifact_id: ${{ needs.build-app.outputs.compiled-sources-artifact-id }}
+            });
+      - name: Delete tested sources
+        id: delete-tested-sources
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.actions.deleteArtifact({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              artifact_id: ${{ needs.run-tests.outputs.tested-sources-artifact-id }}
+            });
+
+# mvn jacoco:prepare-agent jacoco:report surefire:test
+
