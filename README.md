@@ -26,5 +26,4 @@ flowchart LR
   H --> I
   G --> J
 ```
-  J --> I
 
