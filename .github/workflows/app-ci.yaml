@@ -28,41 +28,6 @@ on:
 
 jobs:
 
-  test:
-    name: Test
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Check Code scanning alerts enabled
-        id: check_scanning
-        uses: actions/github-script@v6
-        continue-on-error: true
-        with:
-          script: |
-            const currentRepo = process.env.GITHUB_REPOSITORY;
-            const parts = currentRepo.split("/");
-            const repoOwner = parts[0];
-            const repoName = parts[1];
-            console.log('currentRepo='+currentRepo);
-            console.log('repoOwner='+repoOwner);
-            console.log('repoName='+repoName);
-            const { data } = await github.rest.codeScanning.listAlertsForRepo({
-              owner: repoOwner,
-              repo: repoName,
-            });
-            if (data.length === 0) {
-              console.log('Code scanning are disabled in this repository.');
-              return { codeScanningEnabled: 'false' };
-            } else {
-              console.log('Code scanning are enabled in this repository.');
-              return { codeScanningEnabled: 'true' };
-            }
-      - name: using
-        if: ${{ steps.check_scanning.outputs.codeScanningEnabled != 'true' }}
-        uses: actions/github-script@v6
-        with:
-          script: |
-            console.log('it works');
-
   check-styling:
     name: Check styling
     runs-on: ubuntu-24.04
@@ -261,10 +226,10 @@ jobs:
       - name: Check Code scanning alerts enabled
         id: check_scanning
         uses: actions/github-script@v6
+        continue-on-error: true
         with:
           script: |
-            console.log(process.env.GITHUB_REPOSITORY);
-            const currentRepo = "${{ env.GITHUB_REPOSITORY }}";
+            const currentRepo = process.env.GITHUB_REPOSITORY;
             const parts = currentRepo.split("/");
             const repoOwner = parts[0];
             const repoName = parts[1];
@@ -383,10 +348,10 @@ jobs:
       - name: Check Code scanning alerts enabled
         id: check_scanning
         uses: actions/github-script@v6
+        continue-on-error: true
         with:
           script: |
-            console.log(process.env.GITHUB_REPOSITORY);
-            const currentRepo = "${{ env.GITHUB_REPOSITORY }}";
+            const currentRepo = process.env.GITHUB_REPOSITORY;
             const parts = currentRepo.split("/");
             const repoOwner = parts[0];
             const repoName = parts[1];
