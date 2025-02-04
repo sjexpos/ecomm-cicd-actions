@@ -51,15 +51,15 @@ jobs:
                 owner: repoOwner,
                 repo: repoName,
               });
+              if (data.length === 0) {
+                console.log('Code scanning are disabled in this repository.');
+                return 'false';
+              } else {
+                console.log('Code scanning are enabled in this repository.');
+                return 'true';
+              }
             } catch (e) {
               return 'false';
-            }
-            if (data.length === 0) {
-              console.log('Code scanning are disabled in this repository.');
-              return 'false';
-            } else {
-              console.log('Code scanning are enabled in this repository.');
-              return 'true';
             }
       - name: Get result
         run: echo "${{ steps.check_scanning.outputs.result }}"
