@@ -292,8 +292,6 @@ jobs:
     strategy:
       matrix:
         file: ${{ fromJSON(inputs.docker_images) }}
-    env:
-      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
     steps:
       - name: Split image name, context, dockerfile
         if: ${{ matrix.file != '_' }}
