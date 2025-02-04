@@ -57,7 +57,7 @@ jobs:
               return { codeScanningEnabled: 'true' };
             }
       - name: using
-        if: ${{ steps.check_scanning.outputs.codeScanningEnabled == 'true' }}
+        if: ${{ steps.check_scanning.outputs.codeScanningEnabled != 'true' }}
         uses: actions/github-script@v6
         with:
           script: |
