@@ -228,8 +228,8 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const currentRepo = ${{ env.GITHUB_REPOSITORY }}
-            const parts = currentRepo.split("\\");
+            const currentRepo = "${{ env.GITHUB_REPOSITORY }}";
+            const parts = currentRepo.split("/");
             const repoOwner = parts[0];
             const repoName = parts[1];
             const { data } = await github.rest.codeScanning.listAlertsForRepo({
@@ -346,8 +346,8 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const currentRepo = ${{ env.GITHUB_REPOSITORY }}
-            const parts = currentRepo.split("\\");
+            const currentRepo = "${{ env.GITHUB_REPOSITORY }}";
+            const parts = currentRepo.split("/");
             const repoOwner = parts[0];
             const repoName = parts[1];
             const { data } = await github.rest.codeScanning.listAlertsForRepo({
