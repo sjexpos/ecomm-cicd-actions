@@ -35,6 +35,7 @@ jobs:
       - name: Check Code scanning alerts enabled
         id: check_scanning
         uses: actions/github-script@v6
+        continue-on-error: true
         with:
           script: |
             const currentRepo = process.env.GITHUB_REPOSITORY;
@@ -55,6 +56,12 @@ jobs:
               console.log('Code scanning are enabled in this repository.');
               return { codeScanningEnabled: 'true' };
             }
+      - name: using
+        if: ${{ steps.check_scanning.outputs.codeScanningEnabled == 'true' }}
+        uses: actions/github-script@v6
+        with:
+          script: |
+            console.log('it works');
 
   check-styling:
     name: Check styling
