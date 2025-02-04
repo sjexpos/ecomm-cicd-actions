@@ -148,7 +148,7 @@ jobs:
       tested-sources-artifact-id: ${{ steps.upload-tested-sources.outputs.artifact-id }}
 
   run-sonarqube:
-    name: Run SonarQube
+    name: SonarQube Scan
     needs: [run-tests]
     runs-on: ubuntu-22.04
     services:
@@ -209,7 +209,25 @@ jobs:
         with:
           name: static-code-analysis-report$-${{ env.BRANCH_NAME }}
           path: ./sonar_report.txt
-          
+
+  run-vulnerability-scan:
+    name: Vulnerability Scan
+    needs: [run-tests]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@master
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/maven-3-jdk-21@master
+        continue-on-error: true # To make sure that SARIF upload gets called
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --sarif-file-output=snyk.sarif
+      - name: Upload result to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk.sarif    
+
   publish-coverage:
     name: Publish coverage to Codecov
     needs: [run-sonarqube]
@@ -229,7 +247,7 @@ jobs:
 
   build-docker-image:
     name: Create docker image & publish
-    needs: [run-sonarqube]
+    needs: [run-sonarqube, run-vulnerability-scan]
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -266,9 +284,58 @@ jobs:
           context: ${{ env.context }}
           dockerfile: ${{ env.dockerfile }}
 
+
+  run-docker-vulnerability-scan:
+    name: Docker vulnerability Scan
+    needs: [build-docker-image]
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        file: ${{ fromJSON(inputs.docker_images) }}
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - name: Download compiled sources
+        if: ${{ matrix.file != '_' }}
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: compiled-sources-${{ env.BRANCH_NAME }}
+          path: ./
+      - name: Split image name, context, dockerfile
+        if: ${{ matrix.file != '_' }}
+        run: |
+          triple="${{ matrix.file }}"
+          image_name=$(echo $triple | awk -F ";" '{print $1}')
+          context=$(echo $triple | awk -F ";" '{if (NF >= 2) print $2; else print "./"}')
+          dockerfile=$(echo $triple | awk -F ";" '{if (NF >= 3) print $3; else print "./Dockerfile"}')
+          echo "image_name=$image_name"
+          echo "context=$context"
+          echo "dockerfile=$dockerfile"
+          echo "image_name=$image_name" >> $GITHUB_ENV
+          echo "context=$context" >> $GITHUB_ENV
+          echo "dockerfile=$dockerfile" >> $GITHUB_ENV
+      - name: Run Snyk to check Docker image for vulnerabilities
+        if: ${{ matrix.file != '_' }}
+        # Snyk can be used to break the build when it detects vulnerabilities.
+        # In this case we want to upload the issues to GitHub Code Scanning
+        continue-on-error: true
+        uses: snyk/actions/docker@master
+        env:
+          # In order to use the Snyk Action you will need to have a Snyk API token.
+          # See https://docs.snyk.io/integrations/ci-cd-integrations/github-actions-integration#getting-your-snyk-token
+          # or you can sign up for free at https://snyk.io/login
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: ${{ env.image_name }}
+          args: --file=${{ env.context }}${{ env.dockerfile }}
+      - name: Upload result to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk.sarif
+        
   publish-artifacts:
     name: Publish artifacts
-    needs: [build-app, run-sonarqube]
+    needs: [run-sonarqube, run-vulnerability-scan]
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -300,6 +367,7 @@ jobs:
 
   delete-unused-artifact:
     name: Delete unused artifact
+    # build-app  run-tests are needed as dependencies because it is using outputs from those steps 
     needs: [build-app, run-tests, publish-artifacts, publish-coverage, build-docker-image]
     runs-on: ubuntu-22.04
     steps:
