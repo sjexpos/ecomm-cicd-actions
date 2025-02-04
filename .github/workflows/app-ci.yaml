@@ -377,7 +377,8 @@ jobs:
         
   publish-artifacts:
     name: Publish artifacts
-    needs: [run-sonarqube, run-vulnerability-scan]
+    # build-app are needed as dependencies because it is using outputs from that job 
+    needs: [build-app, run-sonarqube, run-vulnerability-scan]
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -409,7 +410,7 @@ jobs:
 
   delete-unused-artifact:
     name: Delete unused artifact
-    # build-app  run-tests are needed as dependencies because it is using outputs from those steps 
+    # build-app and run-tests are needed as dependencies because it is using outputs from those jobs 
     needs: [build-app, run-tests, publish-artifacts, publish-coverage, build-docker-image]
     runs-on: ubuntu-22.04
     steps:
