@@ -346,10 +346,14 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
+            console.log(process.env.GITHUB_REPOSITORY);
             const currentRepo = "${{ env.GITHUB_REPOSITORY }}";
             const parts = currentRepo.split("/");
             const repoOwner = parts[0];
             const repoName = parts[1];
+            console.log('currentRepo='+currentRepo);
+            console.log('repoOwner='+repoOwner);
+            console.log('repoName='+repoName);
             const { data } = await github.rest.codeScanning.listAlertsForRepo({
               owner: repoOwner,
               repo: repoName,
