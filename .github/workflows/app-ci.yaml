@@ -293,6 +293,7 @@ jobs:
       matrix:
         file: ${{ fromJSON(inputs.docker_images) }}
     steps:
+      - uses: actions/checkout@v4
       - name: Split image name, context, dockerfile
         if: ${{ matrix.file != '_' }}
         run: |
