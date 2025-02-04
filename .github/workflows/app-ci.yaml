@@ -295,12 +295,6 @@ jobs:
     env:
       BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
     steps:
-      - name: Download compiled sources
-        if: ${{ matrix.file != '_' }}
-        uses: actions/download-artifact@v4.1.7
-        with:
-          name: compiled-sources-${{ env.BRANCH_NAME }}
-          path: ./
       - name: Split image name, context, dockerfile
         if: ${{ matrix.file != '_' }}
         run: |
