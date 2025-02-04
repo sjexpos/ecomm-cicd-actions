@@ -215,7 +215,7 @@ jobs:
     needs: [run-tests]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v4
       - name: Run Snyk to check for vulnerabilities
         uses: snyk/actions/maven-3-jdk-21@master
         continue-on-error: true # To make sure that SARIF upload gets called
@@ -223,7 +223,28 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --sarif-file-output=snyk.sarif
+      - name: Check Code scanning alerts enabled
+        id: check_scanning
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const currentRepo = ${{ env.GITHUB_REPOSITORY }}
+            const parts = currentRepo.split("\\");
+            const repoOwner = parts[0];
+            const repoName = parts[1];
+            const { data } = await github.rest.codeScanning.listAlertsForRepo({
+              owner: repoOwner,
+              repo: repoName,
+            });
+            if (data.length === 0) {
+              console.log('Code scanning are disabled in this repository.');
+              return { codeScanningEnabled: 'false' };
+            } else {
+              console.log('Code scanning are enabled in this repository.');
+              return { codeScanningEnabled: 'true' };
+            }
       - name: Upload result to GitHub Code Scanning
+        if: ${{ steps.check_scanning.outputs.codeScanningEnabled == 'true }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: snyk.sarif    
@@ -284,7 +305,6 @@ jobs:
           context: ${{ env.context }}
           dockerfile: ${{ env.dockerfile }}
 
-
   run-docker-vulnerability-scan:
     name: Docker vulnerability Scan
     needs: [build-docker-image]
@@ -321,7 +341,28 @@ jobs:
         with:
           image: ${{ env.image_name }}
           args: --file=${{ env.context }}${{ env.dockerfile }}
+      - name: Check Code scanning alerts enabled
+        id: check_scanning
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const currentRepo = ${{ env.GITHUB_REPOSITORY }}
+            const parts = currentRepo.split("\\");
+            const repoOwner = parts[0];
+            const repoName = parts[1];
+            const { data } = await github.rest.codeScanning.listAlertsForRepo({
+              owner: repoOwner,
+              repo: repoName,
+            });
+            if (data.length === 0) {
+              console.log('Code scanning are disabled in this repository.');
+              return { codeScanningEnabled: 'false' };
+            } else {
+              console.log('Code scanning are enabled in this repository.');
+              return { codeScanningEnabled: 'true' };
+            }
       - name: Upload result to GitHub Code Scanning
+        if: ${{ steps.check_scanning.outputs.codeScanningEnabled == 'true }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: snyk.sarif
