@@ -37,6 +37,7 @@ jobs:
         uses: actions/github-script@v6
         continue-on-error: true
         with:
+          result-encoding: string
           script: |
             const currentRepo = process.env.GITHUB_REPOSITORY;
             const parts = currentRepo.split("/");
@@ -51,21 +52,21 @@ jobs:
             });
             if (data.length === 0) {
               console.log('Code scanning are disabled in this repository.');
-              return { codeScanningEnabled: 'false' };
+              return 'false';
             } else {
               console.log('Code scanning are enabled in this repository.');
-              return { codeScanningEnabled: 'true' };
+              return 'true';
             }
       - name: Get result
-        run: echo "${{ steps.check_scanning.outputs.codeScanningEnabled }}"
+        run: echo "${{ steps.check_scanning.outputs.result }}"
       - name: GitHub Code Scanning enabled
-        if: ${{ steps.check_scanning.outputs.codeScanningEnabled == 'true' }}
+        if: ${{ steps.check_scanning.outputs.result == 'true' }}
         uses: actions/github-script@v6
         with:
           script: |
             console.log('Code scanning enabled');
       - name: GitHub Code Scanning disabled
-        if: ${{ steps.check_scanning.outputs.codeScanningEnabled == 'false' }}
+        if: ${{ steps.check_scanning.outputs.result == 'false' }}
         uses: actions/github-script@v6
         with:
           script: |
