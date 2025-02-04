@@ -28,56 +28,6 @@ on:
 
 jobs:
 
-  test:
-    name: Test
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Check GitHub Code scanning alerts enabled
-        id: check_scanning
-        uses: actions/github-script@v6
-        continue-on-error: true
-        with:
-          result-encoding: string
-          script: |
-            const currentRepo = process.env.GITHUB_REPOSITORY;
-            const parts = currentRepo.split("/");
-            const repoOwner = parts[0];
-            const repoName = parts[1];
-            console.log('currentRepo='+currentRepo);
-            console.log('repoOwner='+repoOwner);
-            console.log('repoName='+repoName);
-            try {
-              const { data } = await github.rest.codeScanning.listAlertsForRepo({
-                owner: repoOwner,
-                repo: repoName,
-              });
-              if (data.length === 0) {
-                console.log('Code scanning are disabled in this repository.');
-                return 'false';
-              } else {
-                console.log('Code scanning are enabled in this repository.');
-                return 'true';
-              }
-            } catch (e) {
-              return 'false';
-            }
-      - name: Get result
-        run: echo "${{ steps.check_scanning.outputs.result }}"
-      - name: GitHub Code Scanning enabled
-        if: ${{ steps.check_scanning.outputs.result == 'true' }}
-        uses: actions/github-script@v6
-        with:
-          script: |
-            console.log('Code scanning enabled');
-      - name: GitHub Code Scanning disabled
-        if: ${{ steps.check_scanning.outputs.result == 'false' }}
-        uses: actions/github-script@v6
-        with:
-          script: |
-            console.log('Code scanning disabled');
-
-
-
   check-styling:
     name: Check styling
     runs-on: ubuntu-24.04
@@ -278,6 +228,7 @@ jobs:
         uses: actions/github-script@v6
         continue-on-error: true
         with:
+          result-encoding: string
           script: |
             const currentRepo = process.env.GITHUB_REPOSITORY;
             const parts = currentRepo.split("/");
@@ -286,16 +237,20 @@ jobs:
             console.log('currentRepo='+currentRepo);
             console.log('repoOwner='+repoOwner);
             console.log('repoName='+repoName);
-            const { data } = await github.rest.codeScanning.listAlertsForRepo({
-              owner: repoOwner,
-              repo: repoName,
-            });
-            if (data.length === 0) {
-              console.log('Code scanning are disabled in this repository.');
-              return { codeScanningEnabled: 'false' };
-            } else {
-              console.log('Code scanning are enabled in this repository.');
-              return { codeScanningEnabled: 'true' };
+            try {
+              const { data } = await github.rest.codeScanning.listAlertsForRepo({
+                owner: repoOwner,
+                repo: repoName,
+              });
+              if (data.length === 0) {
+                console.log('Code scanning are disabled in this repository.');
+                return 'false';
+              } else {
+                console.log('Code scanning are enabled in this repository.');
+                return 'true';
+              }
+            } catch (e) {
+              return 'false';
             }
       - name: Upload result to GitHub Code Scanning
         if: ${{ steps.check_scanning.outputs.codeScanningEnabled == 'true' }}
@@ -400,6 +355,7 @@ jobs:
         uses: actions/github-script@v6
         continue-on-error: true
         with:
+          result-encoding: string
           script: |
             const currentRepo = process.env.GITHUB_REPOSITORY;
             const parts = currentRepo.split("/");
@@ -408,16 +364,20 @@ jobs:
             console.log('currentRepo='+currentRepo);
             console.log('repoOwner='+repoOwner);
             console.log('repoName='+repoName);
-            const { data } = await github.rest.codeScanning.listAlertsForRepo({
-              owner: repoOwner,
-              repo: repoName,
-            });
-            if (data.length === 0) {
-              console.log('Code scanning are disabled in this repository.');
-              return { codeScanningEnabled: 'false' };
-            } else {
-              console.log('Code scanning are enabled in this repository.');
-              return { codeScanningEnabled: 'true' };
+            try {
+              const { data } = await github.rest.codeScanning.listAlertsForRepo({
+                owner: repoOwner,
+                repo: repoName,
+              });
+              if (data.length === 0) {
+                console.log('Code scanning are disabled in this repository.');
+                return 'false';
+              } else {
+                console.log('Code scanning are enabled in this repository.');
+                return 'true';
+              }
+            } catch (e) {
+              return 'false';
             }
       - name: Upload result to GitHub Code Scanning
         if: ${{ steps.check_scanning.outputs.codeScanningEnabled == 'true' }}
