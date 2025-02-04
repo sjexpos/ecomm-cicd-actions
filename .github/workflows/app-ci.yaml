@@ -46,10 +46,14 @@ jobs:
             console.log('currentRepo='+currentRepo);
             console.log('repoOwner='+repoOwner);
             console.log('repoName='+repoName);
-            const { data } = await github.rest.codeScanning.listAlertsForRepo({
-              owner: repoOwner,
-              repo: repoName,
-            }).catch(response => response);
+            try {
+              const { data } = await github.rest.codeScanning.listAlertsForRepo({
+                owner: repoOwner,
+                repo: repoName,
+              });
+            } catch (e) {
+              return 'false';
+            }
             if (data.length === 0) {
               console.log('Code scanning are disabled in this repository.');
               return 'false';
