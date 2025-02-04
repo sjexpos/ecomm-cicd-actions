@@ -56,6 +56,8 @@ jobs:
               console.log('Code scanning are enabled in this repository.');
               return { codeScanningEnabled: 'true' };
             }
+      - name: Get result
+        run: echo "${{ steps.check_scanning.outputs.codeScanningEnabled }}"
       - name: GitHub Code Scanning enabled
         if: ${{ steps.check_scanning.outputs.codeScanningEnabled == 'true' }}
         uses: actions/github-script@v6
