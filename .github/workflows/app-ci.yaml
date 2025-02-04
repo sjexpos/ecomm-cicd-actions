@@ -37,8 +37,7 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            console.log(process.env.GITHUB_REPOSITORY);
-            const currentRepo = "${{ env.GITHUB_REPOSITORY }}";
+            const currentRepo = process.env.GITHUB_REPOSITORY;
             const parts = currentRepo.split("/");
             const repoOwner = parts[0];
             const repoName = parts[1];
