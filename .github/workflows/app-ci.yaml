@@ -223,7 +223,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --sarif-file-output=snyk.sarif
-      - name: Check Code scanning alerts enabled
+      - name: Check GitHub Code scanning alerts enabled
         id: check_scanning
         uses: actions/github-script@v6
         continue-on-error: true
@@ -345,7 +345,7 @@ jobs:
         with:
           image: ${{ env.image_name }}
           args: --file=${{ env.context }}${{ env.dockerfile }}
-      - name: Check Code scanning alerts enabled
+      - name: Check GitHub Code scanning alerts enabled
         id: check_scanning
         uses: actions/github-script@v6
         continue-on-error: true
