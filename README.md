@@ -1,6 +1,8 @@
 
 # E-Comm CI/CD workflows and actions
 
+## CI pipeline
+
 ```mermaid
 flowchart LR
   A(Check styling)

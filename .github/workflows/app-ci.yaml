@@ -37,8 +37,10 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: maven
-          cache-dependency-path: pom.xml
+          # following lines are commented because they are caching maven folder, and bacause the pom.xml does not change, next step 
+          # does not update cache and installed dependencies on this step are not sent to maven cache, so test step will fail.
+          # cache: maven
+          # cache-dependency-path: pom.xml
       - name: checking style
         run: mvn spotless:check
 
@@ -234,9 +236,6 @@ jobs:
             const parts = currentRepo.split("/");
             const repoOwner = parts[0];
             const repoName = parts[1];
-            console.log('currentRepo='+currentRepo);
-            console.log('repoOwner='+repoOwner);
-            console.log('repoName='+repoName);
             try {
               const { data } = await github.rest.codeScanning.listAlertsForRepo({
                 owner: repoOwner,
@@ -250,10 +249,15 @@ jobs:
                 return 'true';
               }
             } catch (e) {
+              if (e.status === 200 || e.status === 304 || e.status === 404) {
+                console.log('Code scanning are enabled in this repository.');
+                return 'true';
+              }
+              console.log('Code scanning are disabled in this repository.');
               return 'false';
             }
       - name: Upload result to GitHub Code Scanning
-        if: ${{ steps.check_scanning.outputs.codeScanningEnabled == 'true' }}
+        if: ${{ steps.check_scanning.outputs.result == 'true' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: snyk.sarif    
@@ -349,7 +353,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           image: ${{ env.image_name }}
-          args: --file=${{ env.context }}${{ env.dockerfile }}
+          args: --file=${{ env.dockerfile }}
       - name: Check GitHub Code scanning alerts enabled
         id: check_scanning
         uses: actions/github-script@v6
@@ -361,9 +365,6 @@ jobs:
             const parts = currentRepo.split("/");
             const repoOwner = parts[0];
             const repoName = parts[1];
-            console.log('currentRepo='+currentRepo);
-            console.log('repoOwner='+repoOwner);
-            console.log('repoName='+repoName);
             try {
               const { data } = await github.rest.codeScanning.listAlertsForRepo({
                 owner: repoOwner,
@@ -377,10 +378,15 @@ jobs:
                 return 'true';
               }
             } catch (e) {
+              if (e.status === 200 || e.status === 304 || e.status === 404) {
+                console.log('Code scanning are enabled in this repository.');
+                return 'true';
+              }
+              console.log('Code scanning are disabled in this repository.');
               return 'false';
             }
       - name: Upload result to GitHub Code Scanning
-        if: ${{ steps.check_scanning.outputs.codeScanningEnabled == 'true' }}
+        if: ${{ steps.check_scanning.outputs.result == 'true' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: snyk.sarif
