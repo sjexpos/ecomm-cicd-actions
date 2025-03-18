@@ -6,26 +6,32 @@
 ```mermaid
 flowchart LR
   A(Check styling)
-  B(Build Application)
+  B(Build code)
   C(Run Tests)
-  D(SonarQube Scan)
-  E(Vulnerability Scan)
-  F(Publish coverage to Codecov)
-  G(Create docker image & publish)
-  H(Publish artifacts)
-  I(Delete unused artifact)
-  J(Docker Vulnerability Scan)
+  D(Run Mutation Tests)
+  E(Build reports)
+  F(SonarQube Scan)
+  G(Vulnerability Scan)
+  H(Publish coverage)
+  I(Create & publish docker image)
+  J(Publish artifacts)
+  K(Publish reports)
+  L(Delete unused artifact)
+  M(Docker Vulnerability Scan)
   A --> B
   B --> C
   C --> D
-  C --> E
-  D --> F
-  D --> G
-  E --> G
-  D --> H
-  E --> H
+  D --> E
+  E --> F
+  C --> G
+  F --> H
   F --> I
-  H --> I
+  F --> K
+  K --> L
+  G --> I
+  F --> J
   G --> J
+  H --> L
+  J --> L
+  I --> M
 ```
-

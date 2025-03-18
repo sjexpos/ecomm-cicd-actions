@@ -45,7 +45,7 @@ jobs:
         run: mvn spotless:check
 
   build-app:
-    name: Build Application
+    name: Build code
     needs: [check-styling]
     runs-on: ubuntu-24.04
     env:
@@ -109,7 +109,7 @@ jobs:
             done
           fi
       - name: Building code
-        run: mvn -DskipTests --batch-mode --update-snapshots install
+        run: mvn -DskipTests -Dpitest.skip=true --batch-mode --update-snapshots install
       - name: Upload compilted sources
         id: upload-compiled-sources
         uses: actions/upload-artifact@v4.3.3
@@ -139,7 +139,7 @@ jobs:
           cache: maven
           cache-dependency-path: pom.xml
       - name: Testing code
-        run: mvn verify
+        run: mvn -Dpitest.skip=true verify
       - name: Upload tested sources
         id: upload-tested-sources
         uses: actions/upload-artifact@v4.3.3
@@ -149,9 +149,67 @@ jobs:
     outputs:
       tested-sources-artifact-id: ${{ steps.upload-tested-sources.outputs.artifact-id }}
 
+  run-pitest:
+    name: Run Mutation Tests
+    needs: [run-tests]
+    runs-on: ubuntu-22.04
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - name: Download tested sources
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: tested-sources-${{ env.BRANCH_NAME }}
+          path: ./
+      - uses: actions/setup-java@v4.2.2
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+          cache-dependency-path: pom.xml
+      - name: Testing code
+        run: mvn org.pitest:pitest-maven:mutationCoverage
+      - name: Upload pitested sources
+        id: upload-pitested-sources
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: pitested-sources-${{ env.BRANCH_NAME }}
+          path: ./
+    outputs:
+      pitested-sources-artifact-id: ${{ steps.upload-pitested-sources.outputs.artifact-id }}
+
+  create-site:
+    name: Build reports
+    needs: [ run-pitest ]
+    runs-on: ubuntu-22.04
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - name: Download pitested sources
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: pitested-sources-${{ env.BRANCH_NAME }}
+          path: ./
+      - uses: actions/setup-java@v4.2.2
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+          cache-dependency-path: pom.xml
+      - name: Run maven site
+        run: mvn -DskipTests site
+      - name: Upload site sources
+        id: upload-site-sources
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: site-sources-${{ env.BRANCH_NAME }}
+          path: ./
+    outputs:
+      site-sources-artifact-id: ${{ steps.upload-site-sources.outputs.artifact-id }}
+
   run-sonarqube:
     name: SonarQube Scan
-    needs: [run-tests]
+    needs: [create-site]
     runs-on: ubuntu-22.04
     services:
       sonarqube:
@@ -170,10 +228,10 @@ jobs:
       SONARQUBE_USER: admin
       SONARQUBE_PASSWORD: Admin123456!
     steps:
-      - name: Download tested sources
+      - name: Download pitested sources
         uses: actions/download-artifact@v4.1.7
         with:
-          name: tested-sources-${{ env.BRANCH_NAME }}
+          name: site-sources-${{ env.BRANCH_NAME }}
           path: ./
       - uses: actions/setup-java@v4.2.2
         with:
@@ -202,7 +260,7 @@ jobs:
           echo "SONARQUBE_TOKEN=$sonar_token" >> $GITHUB_ENV
       - name: Static Code Analysis
         run: |
-          mvn sonar:sonar -Dsonar.login=${{ env.SONARQUBE_TOKEN }} -Dsonar.host.url=http://$SONARQUBE_HOST:$SONARQUBE_PORT -Dsonar.projectKey='${{ inputs.sonar_project_key }}' -Dsonar.projectName='${{ inputs.sonar_project_name }}'
+          mvn sonar:sonar -Dpitest.skip=true -Dsonar.login=${{ env.SONARQUBE_TOKEN }} -Dsonar.host.url=http://$SONARQUBE_HOST:$SONARQUBE_PORT -Dsonar.projectKey='${{ inputs.sonar_project_key }}' -Dsonar.projectName='${{ inputs.sonar_project_name }}'
       - name: Generate Static Code Analysis report
         run: |
           curl -u $SONARQUBE_USER:$SONARQUBE_PASSWORD "http://$SONARQUBE_HOST:$SONARQUBE_PORT/api/measures/component?additionalFields=period%2Cmetrics&component=${{ inputs.sonar_project_key }}&metricKeys=alert_status%2Cquality_gate_details%2Cnew_violations%2Caccepted_issues%2Cnew_accepted_issues%2Chigh_impact_accepted_issues%2Csoftware_quality_maintainability_issues%2Csoftware_quality_reliability_issues%2Csoftware_quality_security_issues%2Cbugs%2Cnew_bugs%2Creliability_rating%2Csoftware_quality_reliability_rating%2Cnew_reliability_rating%2Cnew_software_quality_reliability_rating%2Cvulnerabilities%2Cnew_vulnerabilities%2Csecurity_rating%2Csoftware_quality_security_rating%2Cnew_security_rating%2Cnew_software_quality_security_rating%2Csecurity_hotspots%2Cnew_security_hotspots%2Csecurity_hotspots_reviewed%2Cnew_security_hotspots_reviewed%2Csecurity_review_rating%2Cnew_security_review_rating%2Ccode_smells%2Cnew_code_smells%2Csqale_rating%2Csoftware_quality_maintainability_rating%2Cnew_maintainability_rating%2Cnew_software_quality_maintainability_rating%2Csqale_index%2Cnew_technical_debt%2Ccoverage%2Cnew_coverage%2Clines_to_cover%2Cnew_lines_to_cover%2Ctests%2Cduplicated_lines_density%2Cnew_duplicated_lines_density%2Cduplicated_blocks%2Cncloc%2Cncloc_language_distribution%2Cprojects%2Clines%2Cnew_lines%2Cviolations" > ./sonar_report.txt
@@ -263,24 +321,75 @@ jobs:
           sarif_file: snyk.sarif    
 
   publish-coverage:
-    name: Publish coverage to Codecov
+    name: Publish coverage
     needs: [run-sonarqube]
     runs-on: ubuntu-22.04
     env:
       BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
     steps:
-      - name: Download tested sources
+      - name: Download site sources
         uses: actions/download-artifact@v4.1.7
         with:
-          name: tested-sources-${{ env.BRANCH_NAME }}
+          name: site-sources-${{ env.BRANCH_NAME }}
           path: ./
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  publish-artifacts:
+    name: Publish artifacts
+    # build-app are needed as dependencies because it is using outputs from that job
+    needs: [build-app, run-sonarqube, run-vulnerability-scan]
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        file: ${{ fromJSON(inputs.files_as_artifacts) }}
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+      VERSION: ${{ needs.build-app.outputs.project-version }}
+      FILES: ${{ inputs.files_as_artifacts }}
+    steps:
+      - name: Download tested sources
+        if: ${{ matrix.file != '_' }}
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: pitested-sources-${{ env.BRANCH_NAME }}
+          path: ./
+      - name: Resolving ${{ matrix.file }}
+        if: ${{ matrix.file != '_' }}
+        run: |
+          filename=${{ matrix.file }}-${{ env.VERSION }}.jar
+          artifact_name=$(basename "${{ matrix.file }}" .${file##*.})-${{ env.VERSION }}
+          echo "filename=$filename" >> $GITHUB_ENV
+          echo "artifact_name=$artifact_name" >> $GITHUB_ENV
+      - name: Upload ${{ env.artifact_name }}
+        if: ${{ matrix.file != '_' }}
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: ${{ env.artifact_name }}
+          path: ${{ env.filename }}
+
+  publish-reports:
+    name: Publish reports
+    needs: [run-sonarqube]
+    runs-on: ubuntu-22.04
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - name: Download site sources
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: site-sources-${{ env.BRANCH_NAME }}
+          path: ./
+      - name: Deploy site
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/site
+
   build-docker-image:
-    name: Create docker image & publish
+    name: Create & publish docker image
     needs: [run-sonarqube, run-vulnerability-scan]
     runs-on: ubuntu-22.04
     strategy:
@@ -391,43 +500,10 @@ jobs:
         with:
           sarif_file: snyk.sarif
         
-  publish-artifacts:
-    name: Publish artifacts
-    # build-app are needed as dependencies because it is using outputs from that job 
-    needs: [build-app, run-sonarqube, run-vulnerability-scan]
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        file: ${{ fromJSON(inputs.files_as_artifacts) }}
-    env:
-      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-      VERSION: ${{ needs.build-app.outputs.project-version }}
-      FILES: ${{ inputs.files_as_artifacts }}
-    steps:
-      - name: Download tested sources
-        if: ${{ matrix.file != '_' }}
-        uses: actions/download-artifact@v4.1.7
-        with:
-          name: tested-sources-${{ env.BRANCH_NAME }}
-          path: ./
-      - name: Resolving ${{ matrix.file }}
-        if: ${{ matrix.file != '_' }}
-        run: |
-          filename=${{ matrix.file }}-${{ env.VERSION }}.jar
-          artifact_name=$(basename "${{ matrix.file }}" .${file##*.})-${{ env.VERSION }}
-          echo "filename=$filename" >> $GITHUB_ENV
-          echo "artifact_name=$artifact_name" >> $GITHUB_ENV
-      - name: Upload ${{ env.artifact_name }}
-        if: ${{ matrix.file != '_' }}
-        uses: actions/upload-artifact@v4.3.3
-        with:
-          name: ${{ env.artifact_name }}
-          path: ${{ env.filename }}
-
   delete-unused-artifact:
     name: Delete unused artifact
-    # build-app and run-tests are needed as dependencies because it is using outputs from those jobs 
-    needs: [build-app, run-tests, publish-artifacts, publish-coverage, build-docker-image]
+    # build-app, run-tests, run-pitest and create-site are needed as dependencies because it is using outputs from those jobs
+    needs: [build-app, run-tests, run-pitest, create-site, publish-artifacts, publish-coverage, publish-reports, build-docker-image]
     runs-on: ubuntu-22.04
     steps:
       - name: Delete compiled sources
@@ -450,6 +526,23 @@ jobs:
               repo: context.repo.repo,
               artifact_id: ${{ needs.run-tests.outputs.tested-sources-artifact-id }}
             });
-
-# mvn jacoco:prepare-agent jacoco:report surefire:test
-
+      - name: Delete pitested sources
+        id: delete-pitested-sources
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.actions.deleteArtifact({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              artifact_id: ${{ needs.run-pitest.outputs.pitested-sources-artifact-id }}
+            });
+      - name: Delete site sources
+        id: delete-site-sources
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.actions.deleteArtifact({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              artifact_id: ${{ needs.create-site.outputs.site-sources-artifact-id }}
+            });
